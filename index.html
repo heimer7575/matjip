@@ -157,6 +157,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mu
       <button class="chip" data-f="room" aria-pressed="false">룸 있음</button>
       <button class="chip" data-f="noCharge" aria-pressed="false">룸차지 없음</button>
       <button class="chip" data-f="noDeposit" aria-pressed="false">예약금 없음</button>
+      <button class="chip" data-f="ct" aria-pressed="false">캐치테이블</button>
       <select id="fCat" aria-label="음식 종류" style="width:auto;padding:4px 8px;font-size:13px;border-radius:999px">
         <option value="">음식 종류 전체</option>
       </select>
@@ -251,7 +252,8 @@ const man=n=>!n?"":(n>=10000?(Math.round(n/1000)/10).toString().replace(/\.0$/,"
 function dkey(iso){const d=new Date(iso||Date.now());return d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0")+" ("+WD[d.getDay()]+")"}
 function toast(m){const t=document.createElement("div");t.className="toast";t.textContent=m;document.body.append(t);setTimeout(()=>t.remove(),2200)}
 function safeUrl(u){u=String(u||"").trim();return /^https?:\/\//i.test(u)?u:""}
-const isCT=u=>/catchtable\.co\.kr/i.test(String(u||""));
+const isCT=u=>/catchtable|ctable\.|catch-table/i.test(String(u||""));
+const ctIn=t=>((String(t||"").match(/https?:\/\/[^\s<>"']*(?:catchtable|ctable\.|catch-table)[^\s<>"']*/i)||[])[0]||"");
 function telNum(p){return String(p||"").replace(/[^\d+]/g,"")}
 const ANDROID=/Android/i.test(navigator.userAgent);
 
@@ -295,6 +297,7 @@ function filtered(){
     if(f.room && p.room?.status!=="yes")return false;
     if(f.noCharge && !(p.room?.status==="yes" && (p.room.charge===0||p.room.chargeNone)))return false;
     if(f.noDeposit && p.deposit?.status!=="no")return false;
+    if(f.ct && !isCT(p.reserveUrl))return false;
     if(state.cat && p.category!==state.cat)return false;
     if(state.price){const [a,b]=state.price.split("-").map(Number); if(!p.pricePer||p.pricePer<a||p.pricePer>b)return false}
     return true}).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -306,7 +309,7 @@ function cardHTML(p){
     <div class="row1"><div class="tile" style="--c:${ccol(p.category)}">${esc(tileTxt(p))}</div><div class="tx"><h3>${esc(p.name||"(이름 미정)")}</h3>
       <div class="meta">${esc([p.kind==="2차"?"2차":"",p.category,regionOf(p),p.area&&p.area!==regionOf(p)?p.area:""].filter(Boolean).join(" · "))}${p.status==="inbox"?` · <span style="color:var(--accent)">${p.queued?"자동 정리 대기":"정리 필요"}</span>`:""}</div></div>
       <div class="price">${p.pricePer?"인당 "+man(p.pricePer):""}</div></div>
-    ${p.kind==="2차"?"":`<div class="badges">${bs.map(b=>`<span class="b ${b.k}">${esc(b.t)}</span>`).join("")}${(p.purposes||[]).map(x=>`<span class="b acc">${esc(x)}</span>`).join("")}</div>`}
+    ${p.kind==="2차"?"":`<div class="badges">${bs.map(b=>`<span class="b ${b.k}">${esc(b.t)}</span>`).join("")}${(p.purposes||[]).map(x=>`<span class="b acc">${esc(x)}</span>`).join("")}${isCT(p.reserveUrl)?'<span class="b" style="background:#fff0eb;color:#e0400f;border-color:transparent">캐치테이블</span>':""}</div>`}
     <div class="actions">
       <button type="button" ${ph?`class="btn tel" data-num="${esc(p.phone)}" data-nm="${esc(p.name)}"`:'class="btn" aria-disabled="true"'}>${ico("phone")}전화</button>
       <button class="btn pri" data-book="${esc(p.id)}">${ico("cal")}바로 예약</button>
@@ -599,6 +602,7 @@ function showDetail(p){
       <button type="button" ${ph?`class="btn tel" data-num="${esc(p.phone)}" data-nm="${esc(p.name)}"`:'class="btn" aria-disabled="true"'}>${ico("phone")}전화</button>
       <button class="btn pri" data-book="${esc(p.id)}">${ico("cal")}바로 예약</button>
       <a class="btn" ${nav?`href="${esc(nav)}" target="_blank" rel="noopener"`:'aria-disabled="true"'}>${ico("pin")}${isNaver(nav)?"네이버":"홈페이지"}</a></div>
+    ${isCT(p.reserveUrl)?`<a class="btn" href="${esc(p.reserveUrl)}" target="_blank" rel="noopener" style="background:#ff4f1f;border-color:#ff4f1f;color:#fff;padding:12px">${ico("cal")}캐치테이블에서 바로 예약</a>`:""}
     ${ph?`<div class="linkrow"><div class="t"><div class="meta">전화번호</div><div style="font-weight:700;font-variant-numeric:tabular-nums">${esc(p.phone)}</div></div><button class="btn sm" data-copy="${esc(p.phone)}">번호 복사</button></div>`:""}
     ${p.kind==="2차"?"":`<div class="sec"><h4>예약 체크</h4><dl class="kv">
       <dt>콜키지</dt><dd><span class="b ${cork(p).k}">${esc(cork(p).t)}</span>${c.note?" "+esc(c.note):""}</dd>
@@ -718,7 +722,7 @@ function ruleParse(text){
   const memo=lines.filter(l=>/(휴무|주차|발렛|예약|마감|웨이팅|추천)/.test(l)&&l.length<120).slice(0,3).join(" / ");
   const p={address,region:""};const region=(typeof regionOf==="function")?regionOf(p):"";
   return {name:name.replace(/^\[|\]$/g,""),category:"",area:"",region:region==="지역 미정"?"":region,address,phone,hours:"",parking:(lines.find(l=>/주차|발렛/.test(l))||"").slice(0,60),golf,
-    menu:"",pricePer:pp?money(pp[1],pp[2]):0,reserveUrl:"",purposes:[],corkage:ck,room:rm,deposit:dp,memo};
+    menu:"",pricePer:pp?money(pp[1],pp[2]):0,reserveUrl:ctIn(T),purposes:[],corkage:ck,room:rm,deposit:dp,memo};
 }
 async function parseInfo(text,kind){
   if(!sample)return ruleParse(text);
@@ -744,7 +748,7 @@ ${text.slice(0,24000)}`,{modelTier:"default"});
   const rm=j.room||{};const ch=Number(rm.charge);
   return {name:String(j.name||""),category:String(j.category||""),area:String(j.area||""),region:String(j.region||""),address:String(j.address||""),phone:String(j.phone||""),
     hours:String(j.hours||""),parking:String(j.parking||""),golf:String(j.golf||""),menu:String(j.menu||""),pricePer:Number(j.pricePer)||0,
-    reserveUrl:safeUrl(j.reserveUrl),purposes:(Array.isArray(j.purposes)?j.purposes:[]).filter(x=>PURP.includes(x)),
+    reserveUrl:safeUrl(j.reserveUrl)||ctIn(text),purposes:(Array.isArray(j.purposes)?j.purposes:[]).filter(x=>PURP.includes(x)),
     corkage:{status:["free","paid","no"].includes(j.corkage?.status)?j.corkage.status:"unknown",fee:Number(j.corkage?.fee)||0,note:String(j.corkage?.note||"")},
     room:{status:["yes","no"].includes(rm.status)?rm.status:"unknown",capacity:Number(rm.capacity)||0,charge:ch>0?ch:(ch===0?0:null),chargeNone:ch===0,note:String(rm.note||""),chargeNote:""},
     deposit:{status:["yes","no"].includes(j.deposit?.status)?j.deposit.status:"unknown",amount:Number(j.deposit?.amount)||0,note:String(j.deposit?.note||"")},
@@ -765,6 +769,10 @@ async function autoOrganize(){
       if(dup){setSt("이미 저장된 링크입니다: "+esc(dup.name||"(이름 미정)"),"err");go.removeAttribute("aria-disabled");return}
       await savePlace({name:nm.trim(),kind,naverUrl:url,status:"inbox",source:"manual"});
       toast("정리 대기열에 넣었습니다");goHome();return;
+    }
+    if(url && isCT(url) && !info && !(pasted&&pasted.length>300)){
+      showEdit({kind,reserveUrl:url,source:"manual"});
+      setTimeout(()=>toast("캐치테이블 링크를 예약 링크에 넣었습니다. 가게 이름을 입력해 주세요"),300);return;
     }
     if(url && !isNaver(url) && !(pasted&&pasted.length>300)){
       if(mcp){const r=await readUrl(url); if(r.text){text=(r.text+"\n\n"+text).trim();pid=r.id||""} else fails=r.fails||[]}
@@ -822,7 +830,7 @@ function showEdit(p,fromAuto){
     <div class="sec"><h4>용도</h4><div class="chips" id="e_purp">${PURP.map(x=>`<button type="button" class="chip" aria-pressed="${(p.purposes||[]).includes(x)}">${x}</button>`).join("")}</div></div>
     <div class="sec"><h4>링크 · 기타</h4>
       <label class="f">네이버 링크<input id="e_url" value="${esc(p.naverUrl)}"></label>
-      <label class="f">예약 링크(네이버 예약 · 캐치테이블 등)<input id="e_rsv" value="${esc(p.reserveUrl)}"></label>
+      <label class="f">예약 링크 — 캐치테이블 앱에서 가게 화면 <b>공유 → 링크 복사</b> 후 붙여넣기<input id="e_rsv" value="${esc(p.reserveUrl)}"></label>
       <label class="f">주소<input id="e_addr" value="${esc(p.address)}"></label>
       <div class="grid2"><label class="f">영업시간<input id="e_hours" value="${esc(p.hours)}"></label><label class="f">주차<input id="e_park" value="${esc(p.parking)}"></label></div>
       <label class="f">가까운 골프장<input id="e_golf" list="e_golfs" value="${esc(p.golf)}" placeholder="예: 남서울CC"></label>
