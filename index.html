@@ -544,10 +544,10 @@ function showBook(p){
     </div>
     <div class="sec"><h4>온라인 예약</h4>
       <div class="actions">
-        <a class="btn" href="${esc(isCT(rs)?rs:"https://app.catchtable.co.kr/")}" target="_blank" rel="noopener" ${isCT(rs)?"":`data-ctname="${esc(p.name)}"`} style="background:#ff4f1f;border-color:#ff4f1f;color:#fff">${ico("cal")}캐치테이블</a>
+        <a class="btn" href="${esc(isCT(rs)?rs:"https://app.catchtable.co.kr/ct/search/total?keyword="+encodeURIComponent(p.name||""))}" target="_blank" rel="noopener" ${isCT(rs)?"":`data-ctname="${esc(p.name)}"`} style="background:#ff4f1f;border-color:#ff4f1f;color:#fff">${ico("cal")}캐치테이블</a>
         <a class="btn" ${nav?`href="${esc(nav)}" target="_blank" rel="noopener"`:'aria-disabled="true"'}>${ico("pin")}네이버 예약</a></div>
       ${rs&&!isCT(rs)?`<a class="btn sm" style="align-self:flex-start" href="${esc(rs)}" target="_blank" rel="noopener">저장된 예약 링크 열기</a>`:""}
-      <p class="note" style="margin:0">${isCT(rs)?"저장된 캐치테이블 예약 페이지로 바로 이동합니다.":"캐치테이블을 누르면 가게 이름이 복사됩니다. 캐치테이블 검색창에 붙여넣어 찾으세요. 찾은 가게 링크를 수정 화면의 <b>예약 링크</b>에 넣어 두면 다음부터 바로 열립니다."}</p>
+      <p class="note" style="margin:0">${isCT(rs)?"저장된 캐치테이블 예약 페이지로 바로 이동합니다.":"캐치테이블에서 이 가게 이름으로 검색한 화면이 열립니다. 검색이 안 되면 가게 이름이 복사되어 있으니 검색창에 붙여넣으세요. 가게 링크를 <b>예약 링크</b>에 넣어 두면 다음부터 예약 화면이 바로 열립니다."}</p>
     </div>
     <div class="actions"><button class="btn pri" id="b_save">예약 내역에 기록</button></div>`);
   const upd=()=>{b.date=$("#b_date").value;b.time=$("#b_time").value;b.people=+$("#b_people").value||1;b.room=$("#b_room").value==="1";b.wine=+$("#b_wine").value||0;b.memo=$("#b_memo").value.trim();b.who=$("#b_who").value.trim();
