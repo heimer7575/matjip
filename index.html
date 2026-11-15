@@ -178,16 +178,55 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mu
 <script>
 window.STANDALONE=true;
 (function(){
-  const KEY="matjip_db_v1";let store={};try{store=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(_){store={}}
-  const subs={};
+  const KEY="matjip_db_v1", SKEY="matjip_sync_v1";
+  let store={};try{store=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(_){store={}}
+  store._ts=store._ts||{};store._del=store._del||{};
+  let cfg={};try{cfg=JSON.parse(localStorage.getItem(SKEY)||"{}")||{}}catch(_){cfg={}}
+  const COLS=["places","reservations"], subs={};
   const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){console.error(e)}};
   const snap=c=>({docs:Object.entries(store[c]||{}).map(([id,d])=>({id,exists:true,data:()=>d}))});
   const emit=c=>(subs[c]||[]).forEach(f=>{try{f(snap(c))}catch(e){console.error(e)}});
+  const stamp=(c,id,ts)=>{(store._ts[c]=store._ts[c]||{})[id]=ts||Date.now()};
+  const put=(c,id,d)=>{(store[c]=store[c]||{})[id]=JSON.parse(JSON.stringify(d));if(store._del[c])delete store._del[c][id];stamp(c,id)};
+  const del=(c,id)=>{if(store[c])delete store[c][id];(store._del[c]=store._del[c]||{})[id]=Date.now();stamp(c,id,store._del[c][id])};
   const col=c=>({onSnapshot(f){(subs[c]=subs[c]||[]).push(f);setTimeout(()=>f(snap(c)),0);return()=>{}},
-    doc(id){return{set:async d=>{(store[c]=store[c]||{})[id]=JSON.parse(JSON.stringify(d));save();emit(c)},delete:async()=>{if(store[c])delete store[c][id];save();emit(c)}}}});
+    doc(id){return{set:async d=>{put(c,id,d);save();emit(c);later()},delete:async()=>{del(c,id);save();emit(c);later()}}}});
+  /* ---- 동기화 (구글 시트) ---- */
+  function later(){}
+  /*SYNC-REMOVED
+  const S={status:cfg.url?"대기":"꺼짐",last:cfg.last||0,error:""};
+  const listeners=[];const tell=()=>listeners.forEach(f=>{try{f(S)}catch(_){}});
+  function later(){if(!cfg.url)return;clearTimeout(timer);timer=setTimeout(sync,1500)}
+  async function sync(){
+    if(!cfg.url||!cfg.key)return;
+    if(busy){again=true;return}busy=true;S.status="동기화 중";tell();
+    const sent={};const docs=[];
+    COLS.forEach(c=>{Object.entries(store[c]||{}).forEach(([id,d])=>{const ts=(store._ts[c]||{})[id]||1;docs.push({c,id,ts,doc:d});(sent[c]=sent[c]||{})[id]=ts});
+      Object.entries(store._del[c]||{}).forEach(([id,ts])=>{docs.push({c,id,ts,doc:null});(sent[c]=sent[c]||{})[id]=ts})});
+    try{
+      const r=await fetch(cfg.url,{method:"POST",body:JSON.stringify({key:cfg.key,docs})});
+      const j=await r.json();
+      if(!j.ok)throw new Error(j.error==="bad_key"?"동기화 비밀번호가 맞지 않습니다":(j.error||"서버 오류"));
+      (j.docs||[]).forEach(x=>{if(!COLS.includes(x.c))return;const lt=(store._ts[x.c]||{})[x.id]||0;if(x.ts<lt)return;
+        if(x.doc===null){if(store[x.c])delete store[x.c][x.id];(store._del[x.c]=store._del[x.c]||{})[x.id]=x.ts}
+        else{(store[x.c]=store[x.c]||{})[x.id]=x.doc;if(store._del[x.c])delete store._del[x.c][x.id]}
+        stamp(x.c,x.id,x.ts)});
+      save();COLS.forEach(emit);
+      S.status="완료";S.last=Date.now();S.error="";cfg.last=S.last;try{localStorage.setItem(SKEY,JSON.stringify(cfg))}catch(_){}
+    }catch(e){S.status="실패";S.error=String(e&&e.message||e)}
+    busy=false;tell();if(again){again=false;later()}
+  }
+  setInterval(()=>{if(document.visibilityState==="visible")sync()},60000);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")sync()});
+  setTimeout(sync,800);
+  window.SYNC={get:()=>({url:cfg.url||"",key:cfg.key||"",...S}),
+    connect(url,key){cfg={url:url.trim(),key:key.trim(),last:0};try{localStorage.setItem(SKEY,JSON.stringify(cfg))}catch(_){}S.status="대기";tell();return sync()},
+    off(){cfg={};try{localStorage.removeItem(SKEY)}catch(_){}S.status="꺼짐";tell()},
+    now:sync,on(f){listeners.push(f)}};
+  SYNC-REMOVED*/
   window.LOCALDB={store:()=>({places:store.places||{},reservations:store.reservations||{}}),
-    merge(j){const out={places:0,reservations:0};for(const c of ["places","reservations"]){const src=j[c]||{};const arr=Array.isArray(src)?src:Object.entries(src).map(([id,d])=>({id,...d}));
-      store[c]=store[c]||{};arr.forEach(x=>{const {id,...d}=x;if(id){store[c][id]=d;out[c]++}});emit(c)}save();return out}};
+    merge(j){const out={places:0,reservations:0};COLS.forEach(c=>{const src=j[c]||{};const arr=Array.isArray(src)?src:Object.entries(src).map(([id,d])=>({id,...d}));
+      arr.forEach(x=>{const {id,...d}=x;if(id){put(c,id,d);out[c]++}});emit(c)});save();later();return out}};
   window.claude={use:async n=>n==="db"?{collection:col}:null};
 })();
 </script>
@@ -212,6 +251,7 @@ const man=n=>!n?"":(n>=10000?(Math.round(n/1000)/10).toString().replace(/\.0$/,"
 function dkey(iso){const d=new Date(iso||Date.now());return d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0")+" ("+WD[d.getDay()]+")"}
 function toast(m){const t=document.createElement("div");t.className="toast";t.textContent=m;document.body.append(t);setTimeout(()=>t.remove(),2200)}
 function safeUrl(u){u=String(u||"").trim();return /^https?:\/\//i.test(u)?u:""}
+const isCT=u=>/catchtable\.co\.kr/i.test(String(u||""));
 function telNum(p){return String(p||"").replace(/[^\d+]/g,"")}
 const ANDROID=/Android/i.test(navigator.userAgent);
 
@@ -501,9 +541,10 @@ function showBook(p){
     </div>
     <div class="sec"><h4>온라인 예약</h4>
       <div class="actions">
-        <a class="btn" ${rs?`href="${esc(rs)}" target="_blank" rel="noopener"`:'aria-disabled="true"'}>${ico("cal")}예약 페이지</a>
+        <a class="btn" href="${esc(isCT(rs)?rs:"https://app.catchtable.co.kr/")}" target="_blank" rel="noopener" ${isCT(rs)?"":`data-ctname="${esc(p.name)}"`} style="background:#ff4f1f;border-color:#ff4f1f;color:#fff">${ico("cal")}캐치테이블</a>
         <a class="btn" ${nav?`href="${esc(nav)}" target="_blank" rel="noopener"`:'aria-disabled="true"'}>${ico("pin")}네이버 예약</a></div>
-      <p class="note" style="margin:0">${rs?"저장된 예약 링크로 이동합니다.":"예약 링크가 없으면 네이버 플레이스에서 '예약' 버튼을 눌러 주세요. 수정 화면에서 예약 링크를 넣어 두면 다음부터 바로 열립니다."}</p>
+      ${rs&&!isCT(rs)?`<a class="btn sm" style="align-self:flex-start" href="${esc(rs)}" target="_blank" rel="noopener">저장된 예약 링크 열기</a>`:""}
+      <p class="note" style="margin:0">${isCT(rs)?"저장된 캐치테이블 예약 페이지로 바로 이동합니다.":"캐치테이블을 누르면 가게 이름이 복사됩니다. 캐치테이블 검색창에 붙여넣어 찾으세요. 찾은 가게 링크를 수정 화면의 <b>예약 링크</b>에 넣어 두면 다음부터 바로 열립니다."}</p>
     </div>
     <div class="actions"><button class="btn pri" id="b_save">예약 내역에 기록</button></div>`);
   const upd=()=>{b.date=$("#b_date").value;b.time=$("#b_time").value;b.people=+$("#b_people").value||1;b.room=$("#b_room").value==="1";b.wine=+$("#b_wine").value||0;b.memo=$("#b_memo").value.trim();b.who=$("#b_who").value.trim();
@@ -840,6 +881,7 @@ function bindBackup(){
 /* ---------- 이벤트 ---------- */
 document.addEventListener("click",async e=>{
   const t=e.target;
+  const ct=t.closest("[data-ctname]");if(ct){const nm=ct.dataset.ctname;try{navigator.clipboard.writeText(nm).then(()=>toast("'"+nm+"' 복사됨 · 캐치테이블 검색창에 붙여넣기"),()=>{})}catch(_){}}
   const tl=t.closest(".tel");if(tl){e.stopPropagation();const n=telNum(tl.dataset.num);if(n){window.location.href="tel:"+n}return}
   if(t.closest("[data-stop]")){e.stopPropagation();return}
   if(t.closest("[data-close]")){goHome();return}
